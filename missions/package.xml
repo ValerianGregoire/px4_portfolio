@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>ros2_px4_portfolio</name>
+  <name>missions</name>
   <version>0.0.1</version>
   <description>A collection of ROS2 nodes written for my engineering portfolio.</description>
   <maintainer email="valerian.greg@gmail.com">Valerian Gregoire--Begranger</maintainer>

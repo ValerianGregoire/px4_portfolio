@@ -35,7 +35,7 @@
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
-#include <ros2_px4_portfolio/pid_.hpp>
+#include <missions/pid_.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <stdint.h>
