@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(aruco_opencv_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 
 # Add include
@@ -19,9 +20,9 @@ add_library(pid_lib src/pid_.cpp)
 target_include_directories(pid_lib 
   PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    "$<INSTALL_INTERFACE:include>") # /${PROJECT_NAME}
+    "$<INSTALL_INTERFACE:include>")
     
-ament_target_dependencies(pid_lib px4_msgs rclcpp std_msgs)
+ament_target_dependencies(pid_lib px4_msgs aruco_opencv_msgs rclcpp std_msgs)
 
 # Add executables
 add_executable(controller src/controller.cpp)
