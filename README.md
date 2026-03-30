@@ -2,7 +2,7 @@ Welcome to my embedded systems engineering portfolio
 
 # Overview
 ## About myself
-I am a aeronautical engineering student from IPSA in Paris, currently conducting my end of studies internship in a laboratory. Throughout my studies, and mostly during internships and through associative work, I have come to learn to use multiple tools for the design and automation of UAVs. 
+I am an aeronautical engineering student from IPSA in Paris, currently conducting my end of studies internship in a laboratory. Throughout my studies, and mostly during internships and through associative work, I have come to learn to use multiple tools for the design and automation of UAVs. 
 
 Although I had the opportunity to participate in multiple UAV design challenges, the results never met my expectations due to reasons outside of my control. These shortcomings led me to decide to remake a project similar to the UAV design challenges on my own.
 
@@ -32,17 +32,18 @@ Knowledge I acquired during my studies which did not require to look for documen
 Once this project is over, I will post videos explaining each step that was performed in order to complete it as well as demonstrations of the simulations.
 
 
-# Explanations
+# Basics
 ## Versions
 Here are the software versions used for this project:
 - Operating System: Ubuntu 24.04 LTS Noble
-- PX4: 1.14
-- ROS2: Jazzy Jalisco
-- Gazebo: Harmonic
-- Blender: 4.5lts / 4.5.8
-- Krita: 5.2.11
-- Python: 3.12.3
-- Micro-XRCE-DDS-Agent: 1.0.2
+- PX4 : 1.14
+- ROS2 : Jazzy Jalisco
+- Gazebo : Harmonic
+- Blender : 4.5 lts / 4.5.8
+- Krita : 5.2.11
+- Python : 3.12.3
+- Micro-XRCE-DDS-Agent : 1.0.2
+- YOLO : v11
 
 ## Setup
 Using Ubuntu, clone this repo to `$HOME/ros2_jazzy/src` then run `bash px4_portfolio/extra/setup.sh`. Make sure to have ROS2 installed on your computer beforehand.
@@ -60,9 +61,9 @@ The FMU and the companion computer exchange data throughout the flight, allowing
 
 To switch to Offboard mode and to remain in it, the companion computer must send a continuous stream of commands to the UAV about how to interpret its commands, and what movements to perform. In this manner, PX4 can be seen as a kind of hardware abstraction layer for the higher-level companion computer. Therefore, this project focuses mainly on the algorithms run on the companion computer.
 
-Another important aspect of PX4 is its built-in SITL (Software In The Loop) and HITL (Hardware In The Loop) capability. SITL can be summarized as a complete simulation of a UAV running PX4. Both the physics simulation and computations are run on a computer. HITL uses real hardware such as a Pixhawk FMU and a Raspberry Pi companion computer to perform the computations while the physics are still simulated on a computer. HITL allows us to verify the the UAV will have the required processing power to fly properly.
+Another important aspect of PX4 is its built-in SITL (Software In The Loop) and HITL (Hardware In The Loop) capabilities. SITL can be summarized as a complete simulation of a UAV running PX4. Both the physics simulation and computations are run on a computer. HITL uses real hardware such as a Pixhawk FMU and a Raspberry Pi companion computer to perform the computations while the physics are still simulated on a computer. HITL allows us to verify the the UAV will have the required processing power to fly properly.
 
-Multiple simulators are available for simulation ([here](https://docs.px4.io/main/en/simulation/#supported-simulators)). We will use Gazebo Harmonic for compatibility reasons.
+Multiple simulators are available for simulation [here](https://docs.px4.io/main/en/simulation/#supported-simulators). We will use Gazebo Harmonic for compatibility reasons.
 
 ## ROS2 Use
 The Robot Operating System (ROS2) is the software that runs on the companion computer. ROS2 is a real time software which allows multiple programs to run in parallel on a computer to meet critical deadlines. Each program is called a Node which exchanges data using messages sent through public topics. A collection of nodes is called a package. A package is usually built for a specific task.
@@ -70,9 +71,35 @@ The Robot Operating System (ROS2) is the software that runs on the companion com
 The instances which send and receive messages from topics are called publishers and subscribers respectively. For this project, our nodes will subscribe to topics which come from other ROS2 nodes and from topics which come from PX4 or Gazebo. Commands will then be published to topics read by PX4 as commands.
 
 ## Workflow and Communications
-To run a SITL simulation with PX4, Gazebo and ROS2, we need to start multiple software in parallel. First, PX4 and Gazebo can be started together with `cd $HOME/PX4-Autopilot && make px4_sitl <uav model>`.
+To run a SITL simulation with PX4, Gazebo and ROS2, we need to start multiple software in parallel. First, PX4 and Gazebo can be started together with `cd $HOME/PX4-Autopilot && make px4_sitl gz_x500`.
 
 In another terminal, we can start the software which acts as a bridge between PX4 and ROS2. Natively, PX4 uses its own custom uORB messages to communicate data between its internal modules. The [Micro-XRCE-DDS-Agent](https://docs.px4.io/v1.16/en/middleware/uxrce_dds) takes these uORB messages and converts them to ROS2-readable topics and vice-versa. The entire bridging process is automatic once started with `micro-xrce-dds-agent udp4 -p 8888`. I installed the agent with the snap command instead of building it from source.
+
+Once the simulation is running and the uXRCE-DDS agent is ready, ROS2 nodes can be run. By running `cd $HOME/ros2_jazzy && ros2 run ros_px4_com offboard_control` in a new terminal, the UAV should take-off and hover in the simulation.
+
+Lastly, to allow ROS2 to receive and send data to Gazebo, the ROS2 node ros_gz_bridge must be run. This node takes either a .yaml configuration file as input or a conversion in a command line. Similarly to PX4 and ROS2, Gazebo also works with topics in its own format. The bridge needs to know the name of one topic to bridge it to the other software, the ROS2 type of the topic, and its Gazebo type equivalent. To retrieve all these data, the commands `ros2 topic list`, `ros2 topic info -v`, `gz topic -l`, `gz topic -i -t` can be used. Otherwise, a table with the types is available [here](https://github.com/gazebosim/ros_gz/tree/jazzy/ros_gz_bridge). Without a configuration file, the bridge can be run with `ros2 run ros_gz_bridge parameter_bridge <topic_name>@<ros2_topic_type>@<gz_topic_type>`.
+
+## Missions
+### Mission Arena
+This is the texture used for the mission arena :
+
+![Mission Arena](docs/images/uav_arena.png)
+
+It was made using Krita and fits a 8m x 12m playground. The cyan zone is the take-off area, while the purple one is the landing area. The border of the playground is marked with a red line to never cross, and the ground is textured to allow the UAV's optical flow sensor to perform its designed task properly. An Aruco marker with id 0 is placed at the starting point and a marker with id 10 is placed at the landing point. This is only the base ground texture. Depending on the mission, the map will be modified with elements such as windows, images, and a roaming robot on the ground. In total, three versions of the map will be available to the UAV.
+
+Let me now explain each of the missions performed by the UAV.
+
+### Mission 1 - Line following
+The first mission of the UAV is to follow a line made of a yellow and a green segment on the ground. The goal it to take-off, follow the line with a **constant** yaw until the landing aruco is in sight to perform a precision landing on it. The UAV must then disarm for a few seconds before rearming and taking-off again. The line must be followed again on the way back, but with a yaw that follows the curvature of the line until the starting point is visible again. The UAV must perform a precision landing again and the mission is over.
+
+### Mission 2 - Windows crossing
+The second mission can be conducted on the same map as the line following one. The idea this time is to cross three windows. The windows are part of the map and are **not** indicated by any Aruco marker. Using only a monocular camera, the drone must manage to cross the three windows at least once in any direction in a single flight without crashing. The goal of this mission is to force myself to use a depth estimation model found on Hugging Face to infer usable data instead of a stereo camera.
+
+### Mission 3 - Image detection and virtual package delivery
+The third mission takes place on a different version of the map, with images on the ground. For this mission, the UAV must take-off and search the area for a specific image. Once the image is detected, the UAV must go and land in the landing area to simulate a package collection, then fly back to the detected position and land on the image, before flying back to the starting point to land again. This mission should be made using a fine-tuned YOLOv11 model, and false images are be placed on the ground to challenge the model's accuracy.
+
+### Mission 4 - Wireless collaboration with a Rover
+The fourth and last mission of this project is about collaboration with ground units/ wireless communications. For this mission, a rover roams inside the arena with random movements. An aruco marker with id 5 is attached on its back and the UAV can observe or follow it as needed. The rover can roam anywhere in the arena but never exit its bounds. For the rover to start moving, the UAV must send a periodic signal 0xFF. If the rover drives over the aruco marker 10, the UAV must stop sending the signal to the rover and land on the starting point.    
 
 ## Sources
 ### PX4 Autopilot
@@ -84,6 +111,7 @@ In another terminal, we can start the software which acts as a bridge between PX
 
 ### Gazebo
 - [Setup](https://gazebosim.org/docs/harmonic/ros_installation/)
+- [ros_gz_bridge git](https://github.com/gazebosim/ros_gz/tree/jazzy/ros_gz_bridge)
 
 ### ROS2 Jazzy
 - [ROS2 Docs](https://docs.ros.org/en/jazzy/)
