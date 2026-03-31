@@ -92,23 +92,23 @@
     <!-- Down camera -->
     <include merge='true'>
       <uri>model://mono_cam_down_custom_2</uri>
-      <pose>0 0 .10 0 1.5707 0</pose>
+      <pose>0 0 0.15 0 1.5707 0</pose>
       <name>mono_cam_down_custom_2</name>
     </include>
     <joint name="CameraDownJoint" type="fixed">
       <parent>base_link</parent>
       <child>camera_down_link</child>
-      <pose relative_to="base_link">0 0 0 0 1.5707 0</pose>
+      <pose relative_to="base_link">0 0 0.15 0 1.5707 0</pose>
     </joint>
 
     <!-- Optical flow -->
     <include merge='true'>
       <uri>model://optical_flow</uri>
-      <pose relative_to="base_link">0.03 0 -0.1 0 0 0</pose>
+      <pose relative_to="base_link">0 -0.06 -0.1 0 0 0</pose>
     </include>
     <include merge='true'>
       <uri>model://LW20</uri>
-      <pose relative_to="base_link">0 0 -0.079 0 1.57 0</pose>
+      <pose relative_to="base_link">0 0.06 -0.1 0 1.57 0</pose>
     </include>
     <joint name="optical_flow_joint" type="fixed">
       <parent>base_link</parent>
@@ -125,7 +125,7 @@
       <child>lidar_sensor_link</child>
     </joint>
     <link name="lidar_sensor_link">
-      <pose relative_to="base_link">0 0 -0.05 0 1.57 0</pose>
+      <pose relative_to="base_link">0 -0.06 -0.1 0 1.57 0</pose>
       <inertial>
         <mass>0.001</mass>
         <inertia>
