@@ -103,6 +103,7 @@ public:
 				}
 				(*pose)[0] = marker_.pose.position.x;
 				(*pose)[1] = marker_.pose.position.y;
+				RCLCPP_INFO(this->get_logger(), "Received aruco position : id=%d, x=%f, y=%f", marker_id, marker_.pose.position.x, marker_.pose.position.y);
 			}
 		};
 
@@ -113,13 +114,13 @@ public:
 		trajectory_setpoint_publisher_ = this->create_publisher<TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
 		vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
 		vehicle_odometry_subscriber_ = this->create_subscription<VehicleOdometry>("/fmu/out/vehicle_odometry", qos, vehicle_odometry_cb);
-		aruco_detection_subscriber_ = this->create_subscription<ArucoDetection>("/aruco_detection", qos, aruco_detection_cb);
+		aruco_detection_subscriber_ = this->create_subscription<ArucoDetection>("/aruco_detections", qos, aruco_detection_cb);
 
 
 		/* Utilities */
 		offboard_control_mode_counter = 0;
 		virtual_ground = 0.6;
-		virtual_ceiling = 4.0;
+		virtual_ceiling = 3.0;
 		nan = std::nanf("");
 		airborne = false;
 
@@ -202,7 +203,7 @@ private:
 	// Control
 	PID pid_x = PID(1.0, 0.0, 0.2);
 	PID pid_y = PID(1.0, 0.0, 0.2);
-	PID pid_z = PID(1.0, 0.0, 0.2);
+	PID pid_z = PID(1.0, 0.0, 0.2);	// Good control
 
 	// Odometry
 	float nan;					// For uncontrolled variables
@@ -234,6 +235,11 @@ void Controller::publish_offboard_control_mode()
 	OffboardControlMode msg{};
 	msg.position = false;
 	msg.velocity = true;
+	msg.attitude = false;
+	msg.acceleration = false;
+	msg.body_rate = false;
+	msg.thrust_and_torque = false;
+	msg.direct_actuator = false;
 	msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
 	offboard_control_mode_publisher_->publish(msg);
 }
@@ -250,8 +256,11 @@ void Controller::publish_trajectory_setpoint(TrajectorySetpoint setpoint)
 	msg.velocity[0] = vy_;
 	msg.velocity[1] = vx_;
 	msg.velocity[2] = -msg.velocity[2];
-
+	msg.yawspeed = 0;
+	
 	msg.position = {nan, nan, nan}; // Make sure to not control position
+	msg.yaw = nan;
+	msg.acceleration = {nan, nan, nan};
 
 	msg.timestamp = timestamp_ms;
 	trajectory_setpoint_publisher_->publish(msg);
@@ -338,7 +347,7 @@ void Controller::behavior()
 
 	// Avoid arena bounds
 
-	RCLCPP_INFO(this->get_logger(), "Known z: %f", z);
+	// RCLCPP_INFO(this->get_logger(), "Known z: %f", z);
 	// Publish commands
 	publish_offboard_control_mode();
 	publish_trajectory_setpoint(setpoint);

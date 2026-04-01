@@ -35,7 +35,6 @@ namespace aruco_opencv
 
 struct CoreParams
 {
-  std::string output_topic;
   std::string cam_base_topic;
   bool image_is_rectified;
   std::string output_frame;
