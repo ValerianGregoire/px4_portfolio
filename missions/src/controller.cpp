@@ -57,26 +57,23 @@ public:
 	{
 		/* Callback functions */
 		
-		// Gets estimated velocity data from PX4 and converts it from NED to ENU frame
+		// Gets estimated height from PX4 and converts it from NED to ENU frame
 		auto vehicle_odometry_cb =
 		[this](VehicleOdometry::UniquePtr msg) -> void
 		{
 			// Convert from NED to ENU
 			z = -(msg->position[2]);
-			vx = msg->velocity[1];
-			vy = msg->velocity[0];
-			vz = -(msg->velocity[2]);
 		};
 
 		// Gets the latest aruco detections and updates their positions
 		auto aruco_detection_cb =
 		[this](ArucoDetection::UniquePtr msg) -> void
 		{
-			start_aruco_pose = {nan, nan, nan}; // id = 0
-			end_aruco_pose = {nan, nan, nan}; // id = 10
-			rover_aruco_pose = {nan, nan, nan}; // id = 5
-			target_image_pose = {nan, nan, nan}; // name = target_image_name
-			window_pose = {nan, nan, nan}; // closest to image center
+			start_aruco_pose = {0.0, 0.0, 0.0}; // id = 0
+			end_aruco_pose = {0.0, 0.0, 0.0}; // id = 10
+			rover_aruco_pose = {0.0, 0.0, 0.0}; // id = 5
+			target_image_pose = {0.0, 0.0, 0.0}; // name = target_image_name
+			window_pose = {0.0, 0.0, 0.0}; // closest to image center
 			
 			int len = msg->markers.size();
 			for (int i=0;i<len;i++)
@@ -103,10 +100,9 @@ public:
 				}
 				(*pose)[0] = marker_.pose.position.x;
 				(*pose)[1] = marker_.pose.position.y;
-				RCLCPP_INFO(this->get_logger(), "Received aruco position : id=%d, x=%f, y=%f", marker_id, marker_.pose.position.x, marker_.pose.position.y);
+				RCLCPP_INFO(this->get_logger(), "Received aruco position : id=%d, x=%f, y=%f, z=%f", marker_id, marker_.pose.position.x, marker_.pose.position.y, marker_.pose.position.z);
 			}
 		};
-
 
 		/* Publishers and subscribers */
 		auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5), qos_profile);
@@ -119,10 +115,10 @@ public:
 
 		/* Utilities */
 		offboard_control_mode_counter = 0;
-		virtual_ground = 0.6;
-		virtual_ceiling = 3.0;
+		mission_altitude = 1.8;
 		nan = std::nanf("");
-		airborne = false;
+
+		static_pose = {0.0, 0.0, 0.0};
 
 
 		// Control commands to send to PX4
@@ -157,10 +153,14 @@ private:
 	enum MissionState
 	{
 		TAKEOFF,
+		START_ALIGN,
+		LINE_FOLLOW,
+		IMAGE_ALIGN,
+		WINDOW_ALIGN,
+		ROVER_ALIGN,
+		LAND_ALIGN,
 		LANDING,
-		LANDED,
-		YAW_LOCKED,
-		YAW_FREE
+		LANDED
 	};
 
 	enum MissionState state;
@@ -181,19 +181,8 @@ private:
 	TrajectorySetpoint setpoint;
 	uint64_t offboard_control_mode_counter;
 
-	// State flags
-	bool airborne;
-	bool roaming;
-
-	bool line_lock;
-	bool yaw_lock;
-	bool start_aruco_lock;
-	bool end_aruco_lock;
-	bool rover_aruco_lock;
-	bool target_image_lock;
-	bool window_lock;
-
 	// Environment cues
+	std::array<float, 3UL> static_pose;
 	std::array<float, 3UL> start_aruco_pose;
 	std::array<float, 3UL> end_aruco_pose;
 	std::array<float, 3UL> rover_aruco_pose;
@@ -206,20 +195,17 @@ private:
 	PID pid_z = PID(1.0, 0.0, 0.2);	// Good control
 
 	// Odometry
-	float nan;					// For uncontrolled variables
-	float z, vx, vy, vz;		// Coordinates are assumed to be ENU
-	float virtual_ground;		// The UAV tries to remain above the virtual ground
-	float virtual_ceiling;		// The UAV tries to remain below the virtual ceiling
+	float nan;							// For uncontrolled variables
+	float z, x_err, y_err, z_err;		// Coordinates are assumed to be ENU
+	float mission_altitude;				// Altitude at which the UAV flies
+
 
 	/* Functions */
 	void arm_disarm(bool arm = false);
 	void publish_offboard_control_mode();
 	void publish_trajectory_setpoint(TrajectorySetpoint setpoint);
 	void publish_vehicle_command(uint16_t command, float param1, float param2);
-	void climb();
-	void fall();
-	void avoid_bounds();
-	void follow_line();
+	void control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt = -1.0f);
 	void behavior();
 };
 
@@ -281,24 +267,16 @@ void Controller::publish_vehicle_command(uint16_t command, float param1, float p
 	vehicle_command_publisher_->publish(msg);
 }
 
-void Controller::climb()
+void Controller::control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt)
 {
-	setpoint.velocity[2] = 0.5;
-}
+	x_err = -target[0];
+	y_err = -target[1];
+	z_tgt = z_tgt >= 0.0 ? z_tgt : target[2];
+	z_err = z_tgt - z;
 
-void Controller::fall()
-{
-	setpoint.velocity[2] = -0.2;
-}
-
-void Controller::avoid_bounds()
-{
-	return;
-}
-
-void Controller::follow_line()
-{
-	return;
+	setpoint.velocity[1] = pid_x.compute(x_err, timestamp_ms);
+	setpoint.velocity[0] = pid_y.compute(y_err, timestamp_ms);
+	setpoint.velocity[2] = pid_z.compute(z_err, timestamp_ms);
 }
 
 void Controller::behavior()
@@ -310,40 +288,27 @@ void Controller::behavior()
 	switch (state)
 	{
 		case TAKEOFF:
-			airborne = true;
-			start_aruco_lock = true;
-			break;
-		
+			control(timestamp_ms, static_pose, mission_altitude);
+
+			state = z > 0.5 ? START_ALIGN : state; 
+			break;		
+
+		case START_ALIGN:
+			control(timestamp_ms, start_aruco_pose, mission_altitude);
+
+			// if (x_err < 0.05 && x_err != 0.0 && y_err < 0.05 && y_err != 0.0)
+			// {
+			// 	state = LANDING; 
+			// }
+			break;	
+
 		case LANDING:
-			airborne = false;
-			break;
-		
-		case LANDED:
-			airborne = false;
-			break;
-		
-		case YAW_LOCKED:
-			break;
-		
-		case YAW_FREE:
+			control(timestamp_ms, start_aruco_pose, 0.0);
 			break;
 
 		default:
 			break;
 	}
-
-	// Altitude control
-	if (airborne)
-	{
-		setpoint.velocity[2] = pid_z.compute((virtual_ceiling + virtual_ground)/2 - z, timestamp_ms);
-	}
-	else
-	{
-		fall();
-	}
-
-	// Movement control
-
 
 	// Avoid arena bounds
 
