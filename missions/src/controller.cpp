@@ -75,6 +75,12 @@ public:
 			target_image_pose = {0.0, 0.0, 0.0}; // name = target_image_name
 			window_pose = {0.0, 0.0, 0.0}; // closest to image center
 			
+			start_aruco_detected = false;
+			end_aruco_detected = false;
+			rover_aruco_detected = false;
+			target_image_detected = false;
+			window_detected = false;
+
 			int len = msg->markers.size();
 			for (int i=0;i<len;i++)
 			{
@@ -85,14 +91,17 @@ public:
 				{
 					case 0:
 						pose = &start_aruco_pose;
+						start_aruco_detected = true;
 						break;
 
 					case 10:
 						pose = &end_aruco_pose;
+						end_aruco_detected = true;
 						break;
 
 					case 5:
 						pose = &rover_aruco_pose;
+						rover_aruco_detected = true;
 						break;
 					
 					default:
@@ -115,10 +124,12 @@ public:
 
 		/* Utilities */
 		offboard_control_mode_counter = 0;
-		mission_altitude = 1.8;
+		mission_altitude = 3.0;
+		descent_speed = -0.2;
 		nan = std::nanf("");
 
 		static_pose = {0.0, 0.0, 0.0};
+		custom_movement = {-0.08, -0.15, 0.0};
 
 
 		// Control commands to send to PX4
@@ -160,7 +171,8 @@ private:
 		ROVER_ALIGN,
 		LAND_ALIGN,
 		LANDING,
-		LANDED
+		LANDED,
+		CUSTOM
 	};
 
 	enum MissionState state;
@@ -183,11 +195,20 @@ private:
 
 	// Environment cues
 	std::array<float, 3UL> static_pose;
+	std::array<float, 3UL> custom_movement;
 	std::array<float, 3UL> start_aruco_pose;
 	std::array<float, 3UL> end_aruco_pose;
 	std::array<float, 3UL> rover_aruco_pose;
 	std::array<float, 3UL> target_image_pose;
 	std::array<float, 3UL> window_pose;
+
+	// Flags
+	bool start_aruco_detected;
+	bool end_aruco_detected;
+	bool rover_aruco_detected;
+	bool target_image_detected;
+	bool window_detected;
+	bool aligned;
 	
 	// Control
 	PID pid_x = PID(1.0, 0.0, 0.2);
@@ -198,6 +219,7 @@ private:
 	float nan;							// For uncontrolled variables
 	float z, x_err, y_err, z_err;		// Coordinates are assumed to be ENU
 	float mission_altitude;				// Altitude at which the UAV flies
+	float descent_speed;				// Max speed at which the UAV can descend to land
 
 
 	/* Functions */
@@ -272,7 +294,8 @@ void Controller::control(uint64_t timestamp_ms, std::array<float, 3UL> target, f
 	x_err = -target[0];
 	y_err = -target[1];
 	z_tgt = z_tgt >= 0.0 ? z_tgt : target[2];
-	z_err = z_tgt - z;
+	z_err = std::max(z_tgt - z, descent_speed);
+	aligned = std::abs(x_err) < 0.05 && x_err != 0.0 && std::abs(y_err) < 0.05 && y_err != 0.0;
 
 	setpoint.velocity[1] = pid_x.compute(x_err, timestamp_ms);
 	setpoint.velocity[0] = pid_y.compute(y_err, timestamp_ms);
@@ -288,22 +311,55 @@ void Controller::behavior()
 	switch (state)
 	{
 		case TAKEOFF:
+			RCLCPP_INFO(this->get_logger(), "In takeoff mode.");
 			control(timestamp_ms, static_pose, mission_altitude);
 
-			state = z > 0.5 ? START_ALIGN : state; 
+			state = ((z > 0.5) && start_aruco_detected) ? START_ALIGN : state; 
 			break;		
 
 		case START_ALIGN:
+			RCLCPP_INFO(this->get_logger(), "In start_align mode.");
 			control(timestamp_ms, start_aruco_pose, mission_altitude);
 
-			// if (x_err < 0.05 && x_err != 0.0 && y_err < 0.05 && y_err != 0.0)
-			// {
-			// 	state = LANDING; 
-			// }
+			if (aligned)
+			{
+				state = CUSTOM; 
+			}
 			break;	
 
+		case CUSTOM:
+			RCLCPP_INFO(this->get_logger(), "In custom mode.");
+			control(timestamp_ms, custom_movement, mission_altitude);
+
+			if (end_aruco_detected)
+			{
+				state = LAND_ALIGN;
+			}
+			break;
+		
+		case LAND_ALIGN:
+			RCLCPP_INFO(this->get_logger(), "In land_align mode.");
+			control(timestamp_ms, end_aruco_pose, mission_altitude);
+
+			if (aligned)
+			{
+				state = LANDING; 
+			}
+			break;
+
 		case LANDING:
-			control(timestamp_ms, start_aruco_pose, 0.0);
+			RCLCPP_INFO(this->get_logger(), "In landing mode. z=%f",z);
+			control(timestamp_ms, end_aruco_pose, 0.0);
+			if (z < 0.25)
+			{
+				state = LANDED;
+			}
+			break;
+		
+		case LANDED:
+			RCLCPP_INFO(this->get_logger(), "In landed mode.");
+			arm_disarm(false);
+			timer_->cancel();
 			break;
 
 		default:
