@@ -100,7 +100,6 @@ void declare_core_parameters(rclcpp_lifecycle::LifecycleNode & node)
   declare_param(node, "cam_base_topic", std::string("camera/image_raw"));
   declare_param(node, "image_is_rectified", false, false);
   declare_param(node, "output_frame", std::string(""));
-  declare_param(node, "output_topic", std::string("/aruco_detections"));
   declare_param(node, "marker_dict", std::string("4X4_50"));
   declare_param(node, "image_sub_compressed", false);
   declare_param(node, "image_sub_qos.reliability",
@@ -191,7 +190,6 @@ void declare_detector_parameters(rclcpp_lifecycle::LifecycleNode & node)
 CoreParams retrieve_core_parameters(rclcpp_lifecycle::LifecycleNode & node)
 {
   CoreParams out{};
-  get_param(node, "output_topic", out.output_topic, "Detections output topic: ");
   get_param(node, "cam_base_topic", out.cam_base_topic, "Camera Base Topic: ");
   node.get_parameter("image_is_rectified", out.image_is_rectified);
   node.get_parameter("output_frame", out.output_frame);

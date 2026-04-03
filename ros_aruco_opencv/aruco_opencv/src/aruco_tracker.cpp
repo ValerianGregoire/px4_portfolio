@@ -120,7 +120,7 @@ public:
     }
 
     detection_pub_ = create_publisher<aruco_opencv_msgs::msg::ArucoDetection>(
-      params_.output_topic, 5);
+      "aruco_detections", 5);
     debug_pub_ = create_publisher<sensor_msgs::msg::Image>("~/debug", 5);
 
     return LifecycleNodeInterface::CallbackReturn::SUCCESS;
@@ -152,6 +152,7 @@ public:
     std::string image_topic = rclcpp::expand_topic_or_service_name(
       params_.cam_base_topic, this->get_name(), this->get_namespace());
     std::string cam_info_topic = image_transport::getCameraInfoTopic(image_topic);
+    RCLCPP_INFO(get_logger(), "Cam info topic: %s", cam_info_topic.c_str());
 
     cam_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
       cam_info_topic, 1,

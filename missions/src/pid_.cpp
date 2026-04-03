@@ -1,5 +1,14 @@
 #include <missions/pid_.hpp>
 
+PID::PID(float kp, float ki, float kd)
+{
+    this->kp = kp;
+    this->ki = ki;
+    this->kd = kd;
+
+    integral = 0.0;
+}
+
 float PID::compute(float error, uint64_t timestamp)
 {
     uint64_t dt = timestamp - prev_timestamp;

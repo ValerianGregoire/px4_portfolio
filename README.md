@@ -87,7 +87,7 @@ This is the texture used for the mission arena :
 
 It was made using Krita and fits a 8m x 12m playground. The cyan zone is the take-off area, while the purple one is the landing area. The border of the playground is marked with a red line to never cross, and the ground is textured to allow the UAV's optical flow sensor to perform its designed task properly. An Aruco marker with id 0 is placed at the starting point and a marker with id 10 is placed at the landing point. This is only the base ground texture. Depending on the mission, the map will be modified with elements such as windows, images, and a roaming robot on the ground. In total, three versions of the map will be available to the UAV.
 
-Let me now explain each of the missions performed by the UAV.
+Let's now explain each of the missions performed by the UAV.
 
 ### Mission 1 - Line following
 The first mission of the UAV is to follow a line made of a yellow and a green segment on the ground. The goal it to take-off, follow the line with a **constant** yaw until the landing aruco is in sight to perform a precision landing on it. The UAV must then disarm for a few seconds before rearming and taking-off again. The line must be followed again on the way back, but with a yaw that follows the curvature of the line until the starting point is visible again. The UAV must perform a precision landing again and the mission is over.
@@ -96,10 +96,22 @@ The first mission of the UAV is to follow a line made of a yellow and a green se
 The second mission can be conducted on the same map as the line following one. The idea this time is to cross three windows. The windows are part of the map and are **not** indicated by any Aruco marker. Using only a monocular camera, the drone must manage to cross the three windows at least once in any direction in a single flight without crashing. The goal of this mission is to force myself to use a depth estimation model found on Hugging Face to infer usable data instead of a stereo camera.
 
 ### Mission 3 - Image detection and virtual package delivery
-The third mission takes place on a different version of the map, with images on the ground. For this mission, the UAV must take-off and search the area for a specific image. Once the image is detected, the UAV must go and land in the landing area to simulate a package collection, then fly back to the detected position and land on the image, before flying back to the starting point to land again. This mission should be made using a fine-tuned YOLOv11 model, and false images are be placed on the ground to challenge the model's accuracy.
+The third mission takes place on a different version of the map, with images on the ground. For this mission, the UAV must take-off and search the area for a specific image. Once the image is detected, the UAV must go and land in the landing area to simulate a package collection, then fly back to the detected position and land on the image, before flying back to the starting point to land again. This mission should be made using a fine-tuned YOLOv11 model, and false images are placed on the ground to challenge the model's accuracy.
 
 ### Mission 4 - Wireless collaboration with a Rover
 The fourth and last mission of this project is about collaboration with ground units/ wireless communications. For this mission, a rover roams inside the arena with random movements. An aruco marker with id 5 is attached on its back and the UAV can observe or follow it as needed. The rover can roam anywhere in the arena but never exit its bounds. For the rover to start moving, the UAV must send a periodic signal 0xFF. If the rover drives over the aruco marker 10, the UAV must stop sending the signal to the rover and land on the starting point.    
+
+# In practice
+## Implementation
+### Global idea
+To implement the different control strategies for each mission, the algorithm relies on a few key mechanics. First, since the steps to perform a mission a known, we can use basic finite state machines with states which match the different tasks to perform. Secondly, multiple tasks involve using visual clues to guide the UAV. Thus, a guidance algorithm which moves the UAV based on standardized target position values can allow for an easy implementation of all the stabilization tasks (line following, precision landing, landing on an image, crossing windows...).
+
+To simulate an accurate indoor UAV, this project is GNSS free. I made a UAV model combining the x500, forward facing monocular camera, downward facing monocular camera, optical flow sensor, and downward facing Lidar. The Lidar acts as a complement to the barometer and IMU for the height estimation of the state Kalman filer, and the optical flow sensor sends translational data for the x and y movements of the UAV. This way, the UAV can navigate without GNSS data and without performing pure dead reckoning.
+
+As previously stated, PX4 operates using parameters and flags, which can be setup either dynamically using QGroundControl or the UAV's NuttX shell, or before the execution of the simulation using the model files. The GNSS flags are therefore set to disable it and detect 0 satellite, and every other snesor is set to be used.
+
+### Mission 1
+ 
 
 ## Sources
 ### PX4 Autopilot
