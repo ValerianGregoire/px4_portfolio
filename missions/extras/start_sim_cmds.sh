@@ -16,5 +16,11 @@ ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=$HOME/ros2_ja
 # Start the aruco detection node
 ros2 run aruco_opencv aruco_tracker_autostart --ros-args -p cam_base_topic:=/camera_down/image
 
+# Start needed ros2 topics
+ros2 run missions controller
+ros2 run missions line_detector
+
 # Display an image topic
 ros2 run image_tools showimage --ros-args -r image:=/camera_down/image
+
+

@@ -10,8 +10,13 @@
   
   <depend>rclcpp</depend>
   <depend>chrono</depend> 
-  <depend>std_msgs</depend>
+  <depend>OpenCV</depend>
+  <depend>cv_bridge</depend>
+  <depend>aruco_opencv_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>px4_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
