@@ -4,9 +4,6 @@ cd ~/PX4-Autopilot && make px4_sitl gz_x500_custom_2
 # Start uxrce dds
 micro-xrce-dds-agent udp4 -p 8888
 
-# Start ros
-cd ~/ros2_jazzy && ros2 run missions controller
-
 # Start the ros_gz_bridge
 ros2 run ros_gz_bridge parameter_bridge <topic_name>@<ros2_topic_type>@<gz_topic_type>
 

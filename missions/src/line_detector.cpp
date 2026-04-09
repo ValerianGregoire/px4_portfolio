@@ -42,6 +42,9 @@ https://docs.opencv.org/3.4/db/df6/tutorial_erosion_dilatation.html
 
 Thinning operations:
 https://docs.opencv.org/4.x/df/d2d/group__ximgproc.html
+
+Houghlines P:
+https://docs.opencv.org/4.x/dd/d1a/group__imgproc__feature.html#ga8618180a5948286384e3b7ca02f6feeb
 */
 
 #include <sensor_msgs/msg/image.hpp>
@@ -101,8 +104,23 @@ LineDetector() : Node("line_detector")
 			// Use a bitwise and operation to get the overlap
 			cv::bitwise_and(yellow_mask, green_mask, overlap_mask);
 			
-			// Erode the overlap to get a 1 pixel line
+			// Use thinning to get a 1 pixel line
 			cv::ximgproc::thinning(overlap_mask, overlap_mask, 0);
+
+			// Get Hough lines
+			cv::HoughLinesP(overlap_mask, lines, 1, CV_PI*1/180.0, 3, 20, 40);
+
+			// Convert the mask to a BGR image
+			cv::cvtColor( overlap_mask, overlap_mask, cv::COLOR_GRAY2BGR);
+
+			// Display Hough lines
+			for( size_t i = 0; i < lines.size(); i++ )
+			{
+				cv::line( overlap_mask, cv::Point(lines[i][0], lines[i][1]),
+					cv::Point( lines[i][2], lines[i][3]), cv::Scalar(0,0,255), 3, 8);
+				cv::circle(overlap_mask, cv::Point(lines[i][0], lines[i][1]),
+					5, cv::Scalar(0,255,0));
+			}
 
 			// Display the output line
 			cv::imshow("OVERLAP", overlap_mask);
@@ -147,6 +165,9 @@ private:
 	cv::Mat dilation_element;
 	
 	cv::Mat yellow_mask, green_mask, saturation_mask, value_mask, overlap_mask;
+
+	// Detected lines
+	std::vector<cv::Vec4i> lines;
 
 	// Hue tolerances
 	float yellow_hue, yellow_tol, green_hue, green_tol;
