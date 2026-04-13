@@ -110,7 +110,7 @@ public:
 						break;
 				}
 				(*pose)[0] = marker_.pose.position.x;
-				(*pose)[1] = marker_.pose.position.y;
+				(*pose)[1] = -marker_.pose.position.y;
 				// RCLCPP_INFO(this->get_logger(), "Received aruco position : id=%d, x=%f, y=%f, z=%f", marker_id, marker_.pose.position.x, marker_.pose.position.y, marker_.pose.position.z);
 			}
 		};
@@ -119,8 +119,8 @@ public:
 		auto line_detection_cb =
 		[this](Pose::UniquePtr msg) -> void
 		{
-			line_pose[0] = (float)msg->position.y;
-			line_pose[1] = (float)msg->position.x;
+			line_pose[0] = (float)msg->position.x;
+			line_pose[1] = (float)msg->position.y;
 			line_pose[2] = (float)msg->position.z;
 			line_detected = true;
 			RCLCPP_INFO(this->get_logger(), "Received line position : x=%f, y=%f", line_pose[0], line_pose[1]);
@@ -138,12 +138,12 @@ public:
 
 		/* Utilities */
 		offboard_control_mode_counter = 0;
-		mission_altitude = 3.0;
+		mission_altitude = 2.5;
 		descent_speed = -0.2;
 		nan = std::nanf("");
 
 		static_pose = {0.0, 0.0, 0.0};
-		custom_movement = {-0.08, -0.15, 0.0};
+		custom_movement = {-0.08, 0.15, 0.0};
 
 
 		// Control commands to send to PX4
@@ -186,7 +186,8 @@ private:
 		LAND_ALIGN,
 		LANDING,
 		LANDED,
-		CUSTOM
+		CUSTOM,
+		STATIC
 	};
 
 	enum MissionState state;
@@ -310,7 +311,7 @@ void Controller::publish_vehicle_command(uint16_t command, float param1, float p
 void Controller::control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt, float align_err)
 {
 	x_err = -target[0];
-	y_err = -target[1];
+	y_err = target[1];
 	z_tgt = z_tgt >= 0.0 ? z_tgt : target[2];
 	z_err = std::max(z_tgt - z, descent_speed);
 	aligned = std::abs(x_err) < align_err && x_err != 0.0 && std::abs(y_err) < align_err && y_err != 0.0;
@@ -341,7 +342,7 @@ void Controller::behavior()
 
 			if (aligned)
 			{
-				state = CUSTOM; 
+				state = LINE_FOLLOW; 
 			}
 			break;	
 
@@ -358,6 +359,16 @@ void Controller::behavior()
 		case CUSTOM:
 			// RCLCPP_INFO(this->get_logger(), "In custom mode.");
 			control(timestamp_ms, custom_movement, mission_altitude);
+
+			if (end_aruco_detected)
+			{
+				state = LAND_ALIGN;
+			}
+			break;
+		
+		case STATIC:
+			// RCLCPP_INFO(this->get_logger(), "In static mode.");
+			control(timestamp_ms, static_pose, mission_altitude);
 
 			if (end_aruco_detected)
 			{

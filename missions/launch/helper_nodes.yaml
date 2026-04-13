@@ -28,11 +28,11 @@ launch:
       pkg: "missions"
       exec: "line_detector"
   
-  - node:
-      name: "down_camera"
-      pkg: "image_tools"
-      exec: "showimage"
-      remap:
-        - from: "image"
-          to: "/camera_down/image"
+  # - node:
+  #     name: "down_camera"
+  #     pkg: "image_tools"
+  #     exec: "showimage"
+  #     remap:
+  #       - from: "image"
+  #         to: "/camera_down/image"
 

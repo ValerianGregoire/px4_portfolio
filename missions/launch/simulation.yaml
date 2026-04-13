@@ -3,7 +3,8 @@
 launch:
   - executable:
       name: "px4_sitl"
-      cmd: "build/px4_sitl_default/bin/px4 -i 0"
+      # cmd: "build/px4_sitl_default/bin/px4 -i 0"
+      cmd: "make px4_sitl gz_x500_custom_2"
       cwd: "$(env HOME)/PX4-Autopilot"
       env:
         - name: "PX4_GZ_WORLD"
@@ -12,6 +13,6 @@ launch:
         - name: "PX4_SIM_MODEL"
           value: "gz_x500_custom_2"
         
-        - name: "SYS_AUTOSTART"
-          value: "22000"
+        # - name: "SYS_AUTOSTART"
+        #   value: "22000"
       output: "screen"

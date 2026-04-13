@@ -83,7 +83,7 @@ LineDetector() : Node("line_detector")
 	auto image_cb =
 	[this](Image::SharedPtr msg) -> void
 	{
-		RCLCPP_INFO(this->get_logger(), "Received image.");
+		// RCLCPP_INFO(this->get_logger(), "Received image.");
 
 		// Get rgb image from the message
 		rgb_img_ptr = cv_bridge::toCvCopy(msg, msg->encoding);
@@ -121,14 +121,46 @@ LineDetector() : Node("line_detector")
 		cv::bitwise_and(thin_yellow_mask, crop_mask, thin_yellow_mask);
 
 		// Get Contours
-		cv::findContours(thin_green_mask, green_contours, green_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
-		cv::findContours(thin_yellow_mask, yellow_contours, yellow_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
+		cv::findContours(thin_green_mask, green_contours, green_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_NONE);
+		cv::findContours(thin_yellow_mask, yellow_contours, yellow_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_NONE);
+
+		// Compute the longest contour of each
+		double longest_green = 0.0;
+		for (size_t i = 0; i < green_contours.size(); i++)
+		{
+			double length = cv::arcLength(green_contours[i], false);
+			if (length > longest_green)
+				longest_green = length;
+		}
+
+		double longest_yellow = 0.0;
+		for (size_t i = 0; i < yellow_contours.size(); i++)
+		{
+			double length = cv::arcLength(yellow_contours[i], false);
+			if (length > longest_yellow)
+				longest_yellow = length;
+		}
+
+		// Remove the contours of length of less than 1/3rd of the longest
+		for (size_t i = 0; i < green_contours.size(); i++)
+		{
+			double length = cv::arcLength(green_contours[i], false);
+			if (length < longest_green / 3.0)
+				green_contours.erase(green_contours.begin() + i);
+		}
+
+		for (size_t i = 0; i < yellow_contours.size(); i++)
+		{
+			double length = cv::arcLength(yellow_contours[i], false);
+			if (length < longest_yellow / 3.0)
+				yellow_contours.erase(yellow_contours.begin() + i);
+		}
 
 		// Compute closest points pairs from yellow/green contours
 		contour_pairs.clear();
 		for (size_t i = 0; i < green_contours.size(); i++)
 		{
-			for (size_t j = 0; j < green_contours[i].size(); j++)
+			for (size_t j = 0; j < green_contours[i].size(); j+=50)
 			{
 				cv::Point *p1 = &green_contours[i][j];
 				Eigen::Vector2d p1_v = Eigen::Vector2d(p1->x, p1->y);
@@ -139,7 +171,7 @@ LineDetector() : Node("line_detector")
 
 				for (size_t k = 0; k < yellow_contours.size(); k++)
 				{
-					for (size_t l = 0; l < yellow_contours[k].size(); l++)
+					for (size_t l = 0; l < yellow_contours[k].size(); l+=50)
 					{
 						cv::Point *p2 = &yellow_contours[k][l];
 						Eigen::Vector2d p2_v = Eigen::Vector2d(p2->x, p2->y);
@@ -182,13 +214,14 @@ LineDetector() : Node("line_detector")
 			double angle = atan2(pair_direction.y(), pair_direction.x()) - M_PI/2.0;
 			
 			// Compute the x, y coordinates of the target point
-			double target_distance = 80;
+			double target_distance = 120;
 			target_x = pair_center.x() + std::round(target_distance * cos(angle));
 			target_y = pair_center.y() + std::round(target_distance * sin(angle));
 
-			// Go from pixel coordinates to normalized coordinates between -1 and 1, with (0, 0) being the center of the image
-			double target_x_ = (target_x - green_mask.cols * 1.0) / green_mask.cols;
-			double target_y_ = -(target_y - green_mask.rows * 1.0) / green_mask.rows;
+			// Go from pixel coordinates to normalized coordinates between -0.3 and 0.3, with (0, 0) being the center of the image
+			double coef = 0.4;
+			double target_x_ = std::min(coef, std::max((2 * target_x / (double)green_mask.cols - 1) * coef, -coef));
+			double target_y_ = std::min(coef, std::max(-(2 * target_y / (double)green_mask.rows - 1) * coef, -coef));			
 
 			// Publish the target point as a Pose message
 			Pose target_msg;
