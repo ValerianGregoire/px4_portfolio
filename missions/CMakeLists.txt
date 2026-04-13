@@ -15,9 +15,10 @@ find_package(geometry_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # Add include
-include_directories(include)
+# include_directories(include)
 add_library(pid_lib src/pid_.cpp)
 target_include_directories(pid_lib 
   PUBLIC
@@ -30,8 +31,15 @@ target_link_libraries(controller pid_lib)
 ament_target_dependencies(controller rclcpp aruco_opencv_msgs px4_msgs std_msgs)
 
 add_executable(line_detector src/line_detector.cpp)
+target_include_directories(line_detector
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    ${OpenCV_INCLUDE_DIRS})
 ament_target_dependencies(line_detector rclcpp cv_bridge OpenCV geometry_msgs sensor_msgs std_msgs)
-
+target_link_libraries(line_detector 
+  ${OpenCV_LIBS}
+  Eigen3::Eigen
+)
 
 # Install targets
 install(PROGRAMS
@@ -45,7 +53,11 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY include/
+install(DIRECTORY include
   DESTINATION include)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
 
 ament_package()

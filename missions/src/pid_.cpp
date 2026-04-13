@@ -1,11 +1,13 @@
 #include <missions/pid_.hpp>
 
-PID::PID(float kp, float ki, float kd)
+PID::PID(float kp, float ki, float kd, float alpha)
 {
     this->kp = kp;
     this->ki = ki;
     this->kd = kd;
+    this->alpha = alpha; // Low pass filter (1.0 means no filtering, 0.0 keeps a constant value)
 
+    prev_error = 0.0;
     integral = 0.0;
 }
 
@@ -16,5 +18,5 @@ float PID::compute(float error, uint64_t timestamp)
     error = kp * error + ki * integral + kd * (error - prev_error) / dt;
     prev_error = error;
     prev_timestamp = timestamp;
-    return error;
+    return (1.0 - alpha) * prev_error + alpha * error;
 }

@@ -37,6 +37,7 @@
 #include <px4_msgs/msg/vehicle_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <aruco_opencv_msgs/msg/aruco_detection.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 #include <missions/pid_.hpp>
 
 #include <rclcpp/rclcpp.hpp>
@@ -49,6 +50,7 @@ using namespace std::chrono;
 using namespace std::chrono_literals;
 using namespace px4_msgs::msg;
 using namespace aruco_opencv_msgs::msg;
+using namespace geometry_msgs::msg;
 
 class Controller : public rclcpp::Node
 {
@@ -74,7 +76,7 @@ public:
 			rover_aruco_pose = {0.0, 0.0, 0.0}; // id = 5
 			target_image_pose = {0.0, 0.0, 0.0}; // name = target_image_name
 			window_pose = {0.0, 0.0, 0.0}; // closest to image center
-			
+
 			start_aruco_detected = false;
 			end_aruco_detected = false;
 			rover_aruco_detected = false;
@@ -109,8 +111,19 @@ public:
 				}
 				(*pose)[0] = marker_.pose.position.x;
 				(*pose)[1] = marker_.pose.position.y;
-				RCLCPP_INFO(this->get_logger(), "Received aruco position : id=%d, x=%f, y=%f, z=%f", marker_id, marker_.pose.position.x, marker_.pose.position.y, marker_.pose.position.z);
+				// RCLCPP_INFO(this->get_logger(), "Received aruco position : id=%d, x=%f, y=%f, z=%f", marker_id, marker_.pose.position.x, marker_.pose.position.y, marker_.pose.position.z);
 			}
+		};
+
+		// Gets the latest line detection and update the target position
+		auto line_detection_cb =
+		[this](Pose::UniquePtr msg) -> void
+		{
+			line_pose[0] = (float)msg->position.y;
+			line_pose[1] = (float)msg->position.x;
+			line_pose[2] = (float)msg->position.z;
+			line_detected = true;
+			RCLCPP_INFO(this->get_logger(), "Received line position : x=%f, y=%f", line_pose[0], line_pose[1]);
 		};
 
 		/* Publishers and subscribers */
@@ -120,6 +133,7 @@ public:
 		vehicle_command_publisher_ = this->create_publisher<VehicleCommand>("/fmu/in/vehicle_command", 10);
 		vehicle_odometry_subscriber_ = this->create_subscription<VehicleOdometry>("/fmu/out/vehicle_odometry", qos, vehicle_odometry_cb);
 		aruco_detection_subscriber_ = this->create_subscription<ArucoDetection>("/aruco_detections", qos, aruco_detection_cb);
+		line_detection_subscriber_ = this->create_subscription<Pose>("/line_detections", 10, line_detection_cb);
 
 
 		/* Utilities */
@@ -187,6 +201,7 @@ private:
 	rclcpp::Publisher<VehicleCommand>::SharedPtr vehicle_command_publisher_;
 	rclcpp::Subscription<VehicleOdometry>::SharedPtr vehicle_odometry_subscriber_;
 	rclcpp::Subscription<ArucoDetection>::SharedPtr aruco_detection_subscriber_;
+	rclcpp::Subscription<Pose>::SharedPtr line_detection_subscriber_;
 
 	// Utilities
 	uint64_t timestamp_ms;
@@ -201,6 +216,8 @@ private:
 	std::array<float, 3UL> rover_aruco_pose;
 	std::array<float, 3UL> target_image_pose;
 	std::array<float, 3UL> window_pose;
+	std::array<float, 3UL> line_pose;
+	
 
 	// Flags
 	bool start_aruco_detected;
@@ -208,6 +225,7 @@ private:
 	bool rover_aruco_detected;
 	bool target_image_detected;
 	bool window_detected;
+	bool line_detected;
 	bool aligned;
 	
 	// Control
@@ -227,7 +245,7 @@ private:
 	void publish_offboard_control_mode();
 	void publish_trajectory_setpoint(TrajectorySetpoint setpoint);
 	void publish_vehicle_command(uint16_t command, float param1, float param2);
-	void control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt = -1.0f);
+	void control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt = -1.0f, float align_err = 0.05f);
 	void behavior();
 };
 
@@ -289,13 +307,13 @@ void Controller::publish_vehicle_command(uint16_t command, float param1, float p
 	vehicle_command_publisher_->publish(msg);
 }
 
-void Controller::control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt)
+void Controller::control(uint64_t timestamp_ms, std::array<float, 3UL> target, float z_tgt, float align_err)
 {
 	x_err = -target[0];
 	y_err = -target[1];
 	z_tgt = z_tgt >= 0.0 ? z_tgt : target[2];
 	z_err = std::max(z_tgt - z, descent_speed);
-	aligned = std::abs(x_err) < 0.05 && x_err != 0.0 && std::abs(y_err) < 0.05 && y_err != 0.0;
+	aligned = std::abs(x_err) < align_err && x_err != 0.0 && std::abs(y_err) < align_err && y_err != 0.0;
 
 	setpoint.velocity[1] = pid_x.compute(x_err, timestamp_ms);
 	setpoint.velocity[0] = pid_y.compute(y_err, timestamp_ms);
@@ -311,24 +329,34 @@ void Controller::behavior()
 	switch (state)
 	{
 		case TAKEOFF:
-			RCLCPP_INFO(this->get_logger(), "In takeoff mode.");
+			// RCLCPP_INFO(this->get_logger(), "In takeoff mode.");
 			control(timestamp_ms, static_pose, mission_altitude);
 
 			state = ((z > 0.5) && start_aruco_detected) ? START_ALIGN : state; 
 			break;		
 
 		case START_ALIGN:
-			RCLCPP_INFO(this->get_logger(), "In start_align mode.");
+			// RCLCPP_INFO(this->get_logger(), "In start_align mode.");
 			control(timestamp_ms, start_aruco_pose, mission_altitude);
 
 			if (aligned)
 			{
-				state = CUSTOM; 
+				state = LINE_FOLLOW; 
 			}
 			break;	
 
+		case LINE_FOLLOW:
+			// RCLCPP_INFO(this->get_logger(), "In line follow mode.");
+			control(timestamp_ms, line_pose, mission_altitude);
+
+			if (end_aruco_detected)
+			{
+				state = LAND_ALIGN;
+			}
+			break;
+
 		case CUSTOM:
-			RCLCPP_INFO(this->get_logger(), "In custom mode.");
+			// RCLCPP_INFO(this->get_logger(), "In custom mode.");
 			control(timestamp_ms, custom_movement, mission_altitude);
 
 			if (end_aruco_detected)
@@ -338,7 +366,7 @@ void Controller::behavior()
 			break;
 		
 		case LAND_ALIGN:
-			RCLCPP_INFO(this->get_logger(), "In land_align mode.");
+			// RCLCPP_INFO(this->get_logger(), "In land_align mode.");
 			control(timestamp_ms, end_aruco_pose, mission_altitude);
 
 			if (aligned)
@@ -348,7 +376,7 @@ void Controller::behavior()
 			break;
 
 		case LANDING:
-			RCLCPP_INFO(this->get_logger(), "In landing mode. z=%f",z);
+			// RCLCPP_INFO(this->get_logger(), "In landing mode. z=%f",z);
 			control(timestamp_ms, end_aruco_pose, 0.0);
 			if (z < 0.25)
 			{
@@ -357,7 +385,7 @@ void Controller::behavior()
 			break;
 		
 		case LANDED:
-			RCLCPP_INFO(this->get_logger(), "In landed mode.");
+			// RCLCPP_INFO(this->get_logger(), "In landed mode.");
 			arm_disarm(false);
 			timer_->cancel();
 			break;

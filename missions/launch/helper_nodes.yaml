@@ -1,0 +1,38 @@
+%YAML 1.2
+---
+launch:
+  - executable:
+      name: "xrce_dds"
+      cmd: "micro-xrce-dds-agent udp4 -p 8888"
+      output: "screen"
+
+  - node:
+      name: "ros_gz_bridge"
+      pkg: "ros_gz_bridge"
+      exec: "parameter_bridge"
+      param:
+        - name: "config_file"
+          value: "$(env HOME)/ros2_jazzy/src/px4_portfolio/missions/config/ros_gz_bridge_config.yaml"
+      output: "screen"
+
+  - node:
+      name: "aruco_detector"
+      pkg: "aruco_opencv"
+      exec: "aruco_tracker_autostart"
+      param:
+        - name: "cam_base_topic"
+          value: "/camera_down/image"
+  
+  - node:
+      name: "line_detector"
+      pkg: "missions"
+      exec: "line_detector"
+  
+  - node:
+      name: "down_camera"
+      pkg: "image_tools"
+      exec: "showimage"
+      remap:
+        - from: "image"
+          to: "/camera_down/image"
+

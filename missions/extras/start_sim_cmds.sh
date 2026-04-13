@@ -19,5 +19,3 @@ ros2 run missions line_detector
 
 # Display an image topic
 ros2 run image_tools showimage --ros-args -r image:=/camera_down/image
-
-
