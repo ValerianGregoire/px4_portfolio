@@ -341,7 +341,7 @@ void Controller::behavior()
 
 			if (aligned)
 			{
-				state = LINE_FOLLOW; 
+				state = CUSTOM; 
 			}
 			break;	
 

@@ -106,43 +106,37 @@ LineDetector() : Node("line_detector")
 		yellow_mask = (yellow_mask & saturation_mask) & value_mask;
 		green_mask = (green_mask & saturation_mask) & value_mask;
 
-		// Dilate a mask
-		cv::dilate(yellow_mask, fat_yellow_mask, dilation_element);
-		
-		// Use a bitwise and operation to get the overlap
-		cv::bitwise_and(fat_yellow_mask, green_mask, overlap_mask);
-		
 		// Use thinning to get 1 pixel lines
-		cv::ximgproc::thinning(overlap_mask, thin_overlap_mask, 0);
+		cv::ximgproc::thinning(green_mask, thin_green_mask, 0);
 		cv::ximgproc::thinning(yellow_mask, thin_yellow_mask, 0);
 
 		// Init crop mask if needed
 		if (crop_mask.empty()) {
-			crop_mask = cv::Mat::zeros(overlap_mask.size(), CV_8UC1);
-			crop_mask(cv::Rect(crop_size, crop_size, overlap_mask.cols - 2*crop_size, overlap_mask.rows - 2*crop_size)).setTo(255);
+			crop_mask = cv::Mat::zeros(green_mask.size(), CV_8UC1);
+			crop_mask(cv::Rect(crop_size, crop_size, green_mask.cols - 2*crop_size, green_mask.rows - 2*crop_size)).setTo(255);
 		}
 
 		// Slightly crop the thin masks to reduce contours size
-		cv::bitwise_and(thin_overlap_mask, crop_mask, thin_overlap_mask);
+		cv::bitwise_and(thin_green_mask, crop_mask, thin_green_mask);
 		cv::bitwise_and(thin_yellow_mask, crop_mask, thin_yellow_mask);
 
 		// Get Contours
-		cv::findContours(thin_overlap_mask, overlap_contours, overlap_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
+		cv::findContours(thin_green_mask, green_contours, green_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 		cv::findContours(thin_yellow_mask, yellow_contours, yellow_hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 
-		// Compute closest points pairs from yellow/overlap contours
+		// Compute closest points pairs from yellow/green contours
 		contour_pairs.clear();
-		for (size_t i = 0; i < overlap_contours.size(); i++)
+		for (size_t i = 0; i < green_contours.size(); i++)
 		{
-			for (size_t j = 0; j < overlap_contours[i].size(); j++)
+			for (size_t j = 0; j < green_contours[i].size(); j++)
 			{
-				cv::Point *p1 = &overlap_contours[i][j];
+				cv::Point *p1 = &green_contours[i][j];
 				Eigen::Vector2d p1_v = Eigen::Vector2d(p1->x, p1->y);
 				std::vector<cv::Point> pair;
 				pair.push_back(*p1);
 				pair.push_back(cv::Point(0, 0));
 				double distance = 999999.9;
-				
+
 				for (size_t k = 0; k < yellow_contours.size(); k++)
 				{
 					for (size_t l = 0; l < yellow_contours[k].size(); l++)
@@ -162,9 +156,10 @@ LineDetector() : Node("line_detector")
 		}
 
 		// Get the index of point closest to the center of the image
-		Eigen::Vector2d image_center = Eigen::Vector2d(overlap_mask.cols / 2, overlap_mask.rows / 2);
+		Eigen::Vector2d image_center = Eigen::Vector2d(green_mask.cols / 2, green_mask.rows / 2);
 		int closest_index = -1;
 		double closest_distance = 999999.9;
+
 		for (size_t i = 0; i < contour_pairs.size(); i++)
 		{
 			cv::Point *p1 = &contour_pairs[i][0];
@@ -182,53 +177,52 @@ LineDetector() : Node("line_detector")
 		{
 			cv::Point p1 = contour_pairs[closest_index][0];
 			cv::Point p2 = contour_pairs[closest_index][1];
-			Eigen::Vector2d pair_center = Eigen::Vector2d((p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
-			Eigen::Vector2d pair_direction = Eigen::Vector2d(p2.x - p1.x, p2.y - p1.y).normalized();
-			double angle = atan2(pair_direction.y(), pair_direction.x());
+			pair_center = Eigen::Vector2d((p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
+			pair_direction = Eigen::Vector2d(p2.x - p1.x, p2.y - p1.y).normalized();
+			double angle = atan2(pair_direction.y(), pair_direction.x()) - M_PI/2.0;
 			
-			// Compute the x, y coordinates of the target point in the camera frame
-			double target_distance = 0.0;
-			target_x = pair_center.x() + target_distance * cos(angle);
-			target_y = pair_center.y() + target_distance * sin(angle);
+			// Compute the x, y coordinates of the target point
+			double target_distance = 80;
+			target_x = pair_center.x() + std::round(target_distance * cos(angle));
+			target_y = pair_center.y() + std::round(target_distance * sin(angle));
 
-			// Go from pixel coordinates to normalized coordinates between -0.5 and 0.5, with (0, 0) being the center of the image
-			target_x = (target_x - overlap_mask.cols / 2) / overlap_mask.cols;
-			target_y = -(target_y - overlap_mask.rows / 2) / overlap_mask.rows;
+			// Go from pixel coordinates to normalized coordinates between -1 and 1, with (0, 0) being the center of the image
+			double target_x_ = (target_x - green_mask.cols * 1.0) / green_mask.cols;
+			double target_y_ = -(target_y - green_mask.rows * 1.0) / green_mask.rows;
 
 			// Publish the target point as a Pose message
 			Pose target_msg;
-			target_msg.position.x = target_x;
-			target_msg.position.y = target_y;
+			target_msg.position.x = target_x_;
+			target_msg.position.y = target_y_;
 			target_msg.orientation.z = sin(angle / 2);
 			target_msg.orientation.w = cos(angle / 2);
 			target_publisher_->publish(target_msg);
-			RCLCPP_INFO(this->get_logger(), "Published target point: (%.2f, %.2f) with angle %.2f degrees", target_x, target_y, angle * 180 / M_PI);
+			RCLCPP_INFO(this->get_logger(), "Published target point: (%.2f, %.2f) with angle %.2f degrees", target_x_, target_y_, angle * 180 / M_PI);
 		}
 
 		// Output image
 		output_image = cv::Mat::zeros(bgr_img.size(), CV_8UC3);
 		bgr_img.copyTo(output_image, green_mask);
 		bgr_img.copyTo(output_image, yellow_mask);
-		bgr_img.copyTo(output_image, overlap_mask);
 
 		for(size_t i = 0; i < yellow_contours.size(); i++) {
 			cv::drawContours(output_image, yellow_contours, (int)i, cv::Scalar(0, 0, 255), 2);
 		}
-		for(size_t i = 0; i < overlap_contours.size(); i++) {
-			cv::drawContours(output_image, overlap_contours, (int)i, cv::Scalar(0, 0, 255), 2);
+		for(size_t i = 0; i < green_contours.size(); i++) {
+			cv::drawContours(output_image, green_contours, (int)i, cv::Scalar(0, 0, 255), 2);
 		}
 
-		// Add the target point to the output image using target_x and target_y
+		// Add the target point to the output image
 		if (closest_index != -1)
 		{
 			cv::Point p1 = contour_pairs[closest_index][0];
-			// cv::Point p2 = contour_pairs[closest_index][1];
-			cv::Point target_point = cv::Point((int)(target_x * (overlap_mask.cols / 2) + overlap_mask.cols / 2), (int)(target_y * (overlap_mask.rows / 2) + overlap_mask.rows / 2));
+			cv::Point p2 = contour_pairs[closest_index][1];
+			cv::Point p3 = cv::Point(target_x, target_y);
+			cv::Point p4 = cv::Point(pair_center.x(), pair_center.y());
 			cv::circle(output_image, p1, 5, cv::Scalar(255, 0, 0), -1);
-			// cv::circle(output_image, p2, 5, cv::Scalar(255, 0, 0), -1);
-			cv::circle(output_image, target_point, 5, cv::Scalar(255, 0, 0), -1);
-			// cv::line(output_image, p1, p2, cv::Scalar(255, 0, 0), 2);
-			cv::arrowedLine(output_image, p1, target_point, cv::Scalar(255, 0, 0), 2);
+			cv::circle(output_image, p2, 5, cv::Scalar(255, 0, 0), -1);
+			cv::line(output_image, p1, p2, cv::Scalar(255, 0, 0), 2);
+			cv::arrowedLine(output_image, p4, p3, cv::Scalar(255, 0, 0), 2);
 		}
 		cv::imshow("OUTPUT", output_image);
 		cv::waitKey(1);
@@ -243,9 +237,6 @@ LineDetector() : Node("line_detector")
 
 	rng = cv::RNG(12345);
 	crop_size = 2;
-
-	dilation_size = 3;
-	dilation_element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2*dilation_size + 1, 2*dilation_size+1), cv::Point(dilation_size, dilation_size));
 
 	/* Publishers and subscribers */
 	target_publisher_ = this->create_publisher<Pose>("/line_detections", 10);
@@ -273,28 +264,26 @@ private:
 	cv::Mat dilation_element;
 
 	// Process masks
-	cv::Mat yellow_mask, fat_yellow_mask, thin_yellow_mask;
-	cv::Mat green_mask;
-	cv::Mat overlap_mask, thin_overlap_mask;
+	cv::Mat yellow_mask, thin_yellow_mask;
+	cv::Mat green_mask, thin_green_mask;
 	cv::Mat saturation_mask, value_mask;
 	cv::Mat output_image, output_mask;
 
 	// Contours
-	std::vector<std::vector<cv::Point>> overlap_contours;
-    std::vector<cv::Vec4i> overlap_hierarchy;
+	std::vector<std::vector<cv::Point>> green_contours;
+    std::vector<cv::Vec4i> green_hierarchy;
 	std::vector<std::vector<cv::Point>> yellow_contours;
     std::vector<cv::Vec4i> yellow_hierarchy;
 	cv::RNG rng;
 
 	// Points pairs
 	std::vector<std::vector<cv::Point>> contour_pairs;
+	Eigen::Vector2d pair_center, pair_direction;
 
 	// Image crop
 	cv::Mat crop_mask;
 	int crop_size;
-
-	double target_x;
-	double target_y;
+	int target_x, target_y;
 
 	// Hue tolerances
 	float yellow_hue, yellow_tol, green_hue, green_tol;
