@@ -160,7 +160,7 @@ LineDetector() : Node("line_detector")
 		contour_pairs.clear();
 		for (size_t i = 0; i < green_contours.size(); i++)
 		{
-			for (size_t j = 0; j < green_contours[i].size(); j+=50)
+			for (size_t j = 0; j < green_contours[i].size(); j+=1)
 			{
 				cv::Point *p1 = &green_contours[i][j];
 				Eigen::Vector2d p1_v = Eigen::Vector2d(p1->x, p1->y);
@@ -171,7 +171,7 @@ LineDetector() : Node("line_detector")
 
 				for (size_t k = 0; k < yellow_contours.size(); k++)
 				{
-					for (size_t l = 0; l < yellow_contours[k].size(); l+=50)
+					for (size_t l = 0; l < yellow_contours[k].size(); l+=1)
 					{
 						cv::Point *p2 = &yellow_contours[k][l];
 						Eigen::Vector2d p2_v = Eigen::Vector2d(p2->x, p2->y);
@@ -204,33 +204,48 @@ LineDetector() : Node("line_detector")
 			}
 		}
 
+		
 		// Compute target destination and orientation from the point
 		if (closest_index != -1)
 		{
 			cv::Point p1 = contour_pairs[closest_index][0];
 			cv::Point p2 = contour_pairs[closest_index][1];
-			pair_center = Eigen::Vector2d((p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
-			pair_direction = Eigen::Vector2d(p2.x - p1.x, p2.y - p1.y).normalized();
-			double angle = atan2(pair_direction.y(), pair_direction.x()) - M_PI/2.0;
-			
-			// Compute the x, y coordinates of the target point
-			double target_distance = 120;
-			target_x = pair_center.x() + std::round(target_distance * cos(angle));
-			target_y = pair_center.y() + std::round(target_distance * sin(angle));
 
-			// Go from pixel coordinates to normalized coordinates between -0.3 and 0.3, with (0, 0) being the center of the image
-			double coef = 0.4;
-			double target_x_ = std::min(coef, std::max((2 * target_x / (double)green_mask.cols - 1) * coef, -coef));
-			double target_y_ = std::min(coef, std::max(-(2 * target_y / (double)green_mask.rows - 1) * coef, -coef));			
+			// Make sure the point isn't erratic
+			Eigen::Vector2d p1_v = Eigen::Vector2d(p1.x, p1.y);
+			Eigen::Vector2d p2_v = Eigen::Vector2d(p2.x, p2.y);
+			if ((p2_v - p1_v).norm() < 80)
+			{
+				pair_center = Eigen::Vector2d((p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
+				pair_direction = Eigen::Vector2d(p2.x - p1.x, p2.y - p1.y).normalized();
+				double angle = atan2(pair_direction.y(), pair_direction.x()) - M_PI/2.0;
+				
+				// Compute the x, y coordinates of the target point
+				double target_distance = 90;
+				target_x = pair_center.x() + std::round(target_distance * cos(angle));
+				target_y = pair_center.y() + std::round(target_distance * sin(angle));
 
-			// Publish the target point as a Pose message
-			Pose target_msg;
-			target_msg.position.x = target_x_;
-			target_msg.position.y = target_y_;
-			target_msg.orientation.z = sin(angle / 2);
-			target_msg.orientation.w = cos(angle / 2);
-			target_publisher_->publish(target_msg);
-			RCLCPP_INFO(this->get_logger(), "Published target point: (%.2f, %.2f) with angle %.2f degrees", target_x_, target_y_, angle * 180 / M_PI);
+				// Go from pixel coordinates to normalized coordinates between -0.3 and 0.3, with (0, 0) being the center of the image
+				double coef = .6;
+				double target_x_ = std::min(coef, std::max((2 * target_x / (double)green_mask.cols - 1) * coef, -coef));
+				double target_y_ = std::min(coef, std::max(-(2 * target_y / (double)green_mask.rows - 1) * coef, -coef));			
+
+				double alpha = 1.0;
+				target_x_ = (1 - alpha) * past_target_x + target_x_ * alpha;
+				target_y_ = (1 - alpha) * past_target_y + target_y_ * alpha;
+
+				past_target_x = target_x_;
+				past_target_y = target_y_;
+
+				// Publish the target point as a Pose message
+				Pose target_msg;
+				target_msg.position.x = target_x_;
+				target_msg.position.y = target_y_;
+				target_msg.orientation.z = sin(angle / 2);
+				target_msg.orientation.w = cos(angle / 2);
+				target_publisher_->publish(target_msg);
+				RCLCPP_INFO(this->get_logger(), "Published target point: (%.2f, %.2f) with angle %.2f degrees", target_x_, target_y_, angle * 180 / M_PI);
+			}
 		}
 
 		// Output image
@@ -263,13 +278,16 @@ LineDetector() : Node("line_detector")
 
 	// Variables
 	yellow_hue = 30.0; // From hslpicker.com
-	yellow_tol = 5.0f;
+	yellow_tol = 2.0f;
 
 	green_hue = 57.5f; // From hslpicker.com
-	green_tol = 5.0f;
+	green_tol = 2.0f;
 
 	rng = cv::RNG(12345);
-	crop_size = 2;
+	crop_size = 60;
+
+	past_target_x = 0.0;
+	past_target_y = 0.0;
 
 	/* Publishers and subscribers */
 	target_publisher_ = this->create_publisher<Pose>("/line_detections", 10);
@@ -317,6 +335,7 @@ private:
 	cv::Mat crop_mask;
 	int crop_size;
 	int target_x, target_y;
+	double past_target_x, past_target_y;
 
 	// Hue tolerances
 	float yellow_hue, yellow_tol, green_hue, green_tol;
